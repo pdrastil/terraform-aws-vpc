@@ -1033,8 +1033,9 @@ resource "aws_route" "private_ipv6_egress" {
 ################################################################################
 
 locals {
-  nat_gateway_count = var.single_nat_gateway ? 1 : var.one_nat_gateway_per_az ? length(var.azs) : local.max_subnet_length
-  nat_gateway_ips   = var.reuse_nat_ips ? var.external_nat_ip_ids : try(aws_eip.nat[*].id, [])
+  nat_gateway_count         = var.single_nat_gateway ? 1 : var.one_nat_gateway_per_az ? length(var.azs) : local.max_subnet_length
+  nat_gateway_ips           = var.reuse_nat_ips ? var.external_nat_ip_ids : try(aws_eip.nat[*].id, [])
+  nat_gateway_secondary_ips = chunklist(aws_eip.nat_secondary[*].id, local.nat_gateway_count)
 }
 
 resource "aws_eip" "nat" {
@@ -1056,6 +1057,26 @@ resource "aws_eip" "nat" {
   depends_on = [aws_internet_gateway.this]
 }
 
+resource "aws_eip" "nat_secondary" {
+  count = local.create_vpc && var.enable_nat_gateway && var.secondary_nat_ips > 0 ? local.nat_gateway_count * var.secondary_nat_ips : 0
+
+  domain = "vpc"
+
+  tags = merge(
+    {
+      "Name" = format(
+        "${var.name}-%s-ext-%s",
+        element(var.azs, var.single_nat_gateway ? 0 : count.index),
+        floor(count.index / (var.single_nat_gateway ? 1 : length(var.azs))) + 1
+      )
+    },
+    var.tags,
+    var.nat_eip_tags,
+  )
+
+  depends_on = [aws_internet_gateway.this]
+}
+
 resource "aws_nat_gateway" "this" {
   count = local.create_vpc && var.enable_nat_gateway ? local.nat_gateway_count : 0
 
@@ -1063,6 +1084,11 @@ resource "aws_nat_gateway" "this" {
     local.nat_gateway_ips,
     var.single_nat_gateway ? 0 : count.index,
   )
+
+  secondary_allocation_ids = [
+    for id in local.nat_gateway_secondary_ips : element(id, count.index)
+  ]
+
   subnet_id = element(
     aws_subnet.public[*].id,
     var.single_nat_gateway ? 0 : count.index,

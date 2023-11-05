@@ -1210,6 +1210,12 @@ variable "external_nat_ips" {
   default     = []
 }
 
+variable "secondary_nat_ips" {
+  description = "The number of secondary private IPv4 addresses assigned to NAT Gateways"
+  type        = number
+  default     = 0
+}
+
 variable "nat_gateway_tags" {
   description = "Additional tags for the NAT gateways"
   type        = map(string)
